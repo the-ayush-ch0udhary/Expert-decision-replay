@@ -268,6 +268,38 @@ Once the backend is running, explore all endpoints via interactive documentation
 
 ---
 
+## 🚀 Cloud Deployment Architecture (Vercel + Render + Neon)
+
+The platform is architected for zero-downtime cloud deployment using a decoupled fullstack infrastructure:
+
+```
+┌─────────────────────────────────┐        ┌─────────────────────────────────┐        ┌─────────────────────────────────┐
+│         Vercel (Edge)           │ ─────> │       Render (Web Service)      │ ─────> │       Neon (Cloud Database)     │
+│       React + Vite Frontend     │        │          FastAPI Backend        │        │      PostgreSQL 16 Engine       │
+│  https://<your-app>.vercel.app  │  /api  │ https://expert-decision-replay  │        │ Serverless Datastore with SSL   │
+│                                 │        │          .onrender.com          │        │                                 │
+└─────────────────────────────────┘        └─────────────────────────────────┘        └─────────────────────────────────┘
+```
+
+### 1. Database: Neon Serverless PostgreSQL
+- **Engine**: Cloud-native PostgreSQL 16 with connection pooling and SSL encryption (`sslmode=require`).
+- **Data Persistence**: Houses all institutional ADRs, trade-off matrices, sequential approval gates, and immutable audit logs.
+- **Connection**: Connected via SQLAlchemy driver format: `postgresql+psycopg2://...`.
+
+### 2. Backend: Render Web Service
+- **Live URL**: [https://expert-decision-replay.onrender.com](https://expert-decision-replay.onrender.com)
+- **Interactive Swagger Docs**: [https://expert-decision-replay.onrender.com/docs](https://expert-decision-replay.onrender.com/docs)
+- **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Environment Variables**: `DATABASE_URL` (Neon connection string), `APP_NAME`, `JWT_SECRET_KEY`, `JWT_ALGORITHM`.
+
+### 3. Frontend: Vercel
+- **Root Directory**: `frontend/`
+- **Framework Preset**: Vite
+- **Edge Routing**: `frontend/vercel.json` proxies all `/api/*` requests directly to the Render backend, eliminating CORS issues and ensuring seamless client-side SPA routing (`index.html` fallback).
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
+
