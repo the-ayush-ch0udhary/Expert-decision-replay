@@ -1,6 +1,14 @@
 import os
+import sys
 import shutil
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
+
+# Ensure project root directory is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from sqlalchemy import text
 from app.db.database import SessionLocal, engine
 from app.models.organization import Organization
@@ -11,6 +19,8 @@ from app.models.decision import Decision, DecisionStatus, ImplementationStatus
 from app.models.alternative import Alternative, RiskLevel
 from app.models.approval import Approval, ApprovalStatus
 from app.models.comment import Comment
+from app.models.thread import DiscussionThread
+from app.models.meeting_note import MeetingNote
 from app.models.notification import Notification, NotificationType
 from app.models.audit import AuditLog, AuditAction, DecisionVersion, SecurityLog
 from app.services.security import hash_password
@@ -94,6 +104,18 @@ def clean_and_seed():
             organization_id=org1.id
         )
 
+        admin2_user = User(
+            full_name="Priya Patel",
+            email="admin2@example.com",
+            role=UserRole.ADMINISTRATOR,
+            password=hashed_pwd,
+            employee_id="EMP-ADM02",
+            department="Governance & Compliance",
+            designation="Director of Governance & Auditing",
+            phone_number="+1-555-0106",
+            organization_id=org1.id
+        )
+
         manager_user = User(
             full_name="Sarah Jenkins",
             email="manager@example.com",
@@ -103,6 +125,18 @@ def clean_and_seed():
             department="Engineering Directorate",
             designation="VP of Engineering & Architecture",
             phone_number="+1-555-0101",
+            organization_id=org1.id
+        )
+
+        manager2_user = User(
+            full_name="David Miller",
+            email="manager2@example.com",
+            role=UserRole.MANAGER,
+            password=hashed_pwd,
+            employee_id="EMP-MGR02",
+            department="Cloud Operations",
+            designation="Director of Cloud Infrastructure",
+            phone_number="+1-555-0107",
             organization_id=org1.id
         )
 
@@ -154,7 +188,7 @@ def clean_and_seed():
             organization_id=org1.id
         )
 
-        users_list = [admin_user, manager_user, reviewer_user, sec_reviewer, employee_user, sujal_user]
+        users_list = [admin_user, admin2_user, manager_user, manager2_user, reviewer_user, sec_reviewer, employee_user, sujal_user]
         db.add_all(users_list)
         db.flush()
         print(f" -> Created {len(users_list)} users with email logins.")
@@ -461,6 +495,152 @@ def clean_and_seed():
         )
         db.add(app5_1)
 
+        # Decision 6: ADR-006 (Under Active Review - Ready for Live Testing)
+        dec6 = Decision(
+            title="ADR-006: [LIVE TEST] Adoption of Redis Distributed Cache for High-Traffic Read Endpoints",
+            problem_statement="Repeated database queries on user dashboards and product catalog endpoints are causing 850ms latency during peak traffic. Database CPU reaches 80% due to redundant read queries.",
+            rationale="Distributed Redis caching will drop read latencies below 50ms, offload 60% of database query volume, and enable unified session storage across microservices.",
+            category="Infrastructure",
+            status=DecisionStatus.UNDER_REVIEW,
+            implementation_status=ImplementationStatus.NOT_STARTED,
+            evaluation_criteria='{"latency": 40, "availability": 30, "cost": 30}',
+            organization_id=org1.id,
+            created_by=employee_user.id,
+            created_at=now - timedelta(days=2),
+            updated_at=now - timedelta(hours=6),
+        )
+        dec6.tags.extend([tag_arch, tag_db])
+        db.add(dec6)
+        db.flush()
+
+        alt6_1 = Alternative(
+            decision_id=dec6.id,
+            name="Managed AWS ElastiCache for Redis",
+            description="Fully managed in-memory Redis cluster with automated multi-AZ failover and read replicas.",
+            pros="Sub-5ms latency, automatic multi-AZ failover, native cluster scaling, zero maintenance overhead.",
+            cons="Higher monthly operational cost compared to self-hosted instances.",
+            estimated_cost=35000.0,
+            risk_level=RiskLevel.LOW,
+            feasibility_score=5,
+        )
+        alt6_2 = Alternative(
+            decision_id=dec6.id,
+            name="In-Memory Application RAM Cache",
+            description="Simple in-process LRU cache stored directly inside application server RAM.",
+            pros="Completely free, instantaneous implementation, zero extra infrastructure.",
+            cons="Cache lost on server restart; cannot be shared across multiple server instances.",
+            estimated_cost=0.0,
+            risk_level=RiskLevel.MEDIUM,
+            feasibility_score=4,
+        )
+        db.add_all([alt6_1, alt6_2])
+        db.flush()
+
+        # Approvals for Dec 6: Stage 1 (Raftaar Singh - Pending), Stage 2 (Sarah Jenkins - Pending)
+        app6_1 = Approval(
+            decision_id=dec6.id,
+            reviewer_id=reviewer_user.id,
+            sequence_order=1,
+            status=ApprovalStatus.PENDING,
+            due_date=now + timedelta(days=3),
+            created_at=now - timedelta(days=1)
+        )
+        app6_2 = Approval(
+            decision_id=dec6.id,
+            reviewer_id=manager_user.id,
+            sequence_order=2,
+            status=ApprovalStatus.PENDING,
+            due_date=now + timedelta(days=6),
+            created_at=now - timedelta(days=1)
+        )
+        db.add_all([app6_1, app6_2])
+        db.flush()
+
+        # Discussion Thread & Comments for Dec 6
+        thread6 = DiscussionThread(
+            decision_id=dec6.id,
+            title="Cache Invalidation Strategy & Memory Limits",
+            created_by=reviewer_user.id,
+            created_at=now - timedelta(days=1)
+        )
+        db.add(thread6)
+        db.flush()
+
+        comm6_1 = Comment(
+            decision_id=dec6.id,
+            thread_id=thread6.id,
+            user_id=reviewer_user.id,
+            content="If product prices or catalog inventory update in the database, what is our cache invalidation policy? Are we relying on TTL (Time-To-Live) expiration or event-driven cache eviction via webhooks?",
+            created_at=now - timedelta(days=1)
+        )
+        comm6_2 = Comment(
+            decision_id=dec6.id,
+            thread_id=thread6.id,
+            user_id=employee_user.id,
+            content="We will use automated write-through eviction with a 15-minute fallback TTL. This guarantees users never see stale prices for more than a few seconds while keeping DB hits near zero.",
+            created_at=now - timedelta(hours=18)
+        )
+        db.add_all([comm6_1, comm6_2])
+
+        # Meeting Note for Dec 6
+        note6 = MeetingNote(
+            decision_id=dec6.id,
+            created_by=manager_user.id,
+            title="Weekly ARB Sync: Caching Architecture & Sizing",
+            meeting_date=now.date(),
+            content="Attendees: Alex Chen (Author), Raftaar Singh (Arch), Sarah Jenkins (VP Eng)\n\n1. Evaluated in-memory vs managed Redis; in-memory rejected due to inability to share cache across Kubernetes pods.\n2. Approved 2-node ElastiCache cluster with automated multi-AZ failover.\n3. Memory limit capped at 16GB with LRU (Least Recently Used) eviction policy.\n4. Raftaar approved moving forward to Phase 1 rollout.",
+            created_at=now - timedelta(hours=12)
+        )
+        db.add(note6)
+
+        # Audit logs for Dec 6 replay
+        db.add(AuditLog(decision_id=dec6.id, user_id=employee_user.id, action="CREATE", entity_type="decision", entity_id=dec6.id, description="ADR drafted and problem statement formulated.", created_at=now - timedelta(days=2)))
+        db.add(AuditLog(decision_id=dec6.id, user_id=employee_user.id, action="UPDATE", entity_type="alternative", entity_id=alt6_1.id, description="Added candidate alternative: Managed AWS ElastiCache.", created_at=now - timedelta(days=2, hours=-1)))
+        db.add(AuditLog(decision_id=dec6.id, user_id=employee_user.id, action="UPDATE", entity_type="alternative", entity_id=alt6_2.id, description="Added candidate alternative: In-Memory RAM Cache.", created_at=now - timedelta(days=2, hours=-2)))
+        db.add(AuditLog(decision_id=dec6.id, user_id=employee_user.id, action="SUBMIT", entity_type="decision", entity_id=dec6.id, description="Submitted decision for Architectural Review Board evaluation.", created_at=now - timedelta(days=1)))
+
+        # Decision 7: ADR-007 (Draft - Ready for Demo Editing/Submission)
+        dec7 = Decision(
+            title="ADR-007: [DRAFT] Secure Cloud Object Storage for Technical Documents and Attachments",
+            problem_statement="User attachments, PDF specifications, and architecture diagrams are currently saved on local server disks. This limits horizontal scaling and creates risk of data loss if instances terminate.",
+            rationale="Adopting a resilient cloud object store with 99.999999999% durability, pre-signed upload URLs, and zero egress fees enables stateless backend containers and global CDN delivery.",
+            category="Technology",
+            status=DecisionStatus.DRAFT,
+            implementation_status=ImplementationStatus.NOT_STARTED,
+            evaluation_criteria='{"durability": 40, "egress_cost": 35, "s3_compatibility": 25}',
+            organization_id=org1.id,
+            created_by=employee_user.id,
+            created_at=now - timedelta(hours=4),
+            updated_at=now - timedelta(hours=1),
+        )
+        dec7.tags.extend([tag_arch, tag_sec])
+        db.add(dec7)
+        db.flush()
+
+        alt7_1 = Alternative(
+            decision_id=dec7.id,
+            name="Cloudflare R2 Object Storage",
+            description="S3-compatible distributed object storage with zero egress bandwidth charges.",
+            pros="Zero bandwidth egress costs, full S3 API compatibility, fast global CDN edge delivery.",
+            cons="Slightly fewer compliance certifications compared to AWS.",
+            estimated_cost=12000.0,
+            risk_level=RiskLevel.LOW,
+            feasibility_score=5,
+        )
+        alt7_2 = Alternative(
+            decision_id=dec7.id,
+            name="Amazon Web Services (AWS) S3 Standard",
+            description="Industry-standard Amazon S3 bucket storage with IAM policy controls.",
+            pros="Established enterprise standard, granular IAM security permissions, global region support.",
+            cons="Noticeable monthly egress data transfer fees as download volume grows.",
+            estimated_cost=28000.0,
+            risk_level=RiskLevel.LOW,
+            feasibility_score=4,
+        )
+        db.add_all([alt7_1, alt7_2])
+
+        db.add(AuditLog(decision_id=dec7.id, user_id=employee_user.id, action="CREATE", entity_type="decision", entity_id=dec7.id, description="Draft ADR formulated by employee.", created_at=now - timedelta(hours=4)))
+
         # 8. Create In-App Notifications
         print(" -> Creating Notifications...")
         notif1 = Notification(
@@ -500,17 +680,21 @@ def clean_and_seed():
         print("=" * 60)
         print("\nAll User Accounts (Password for all: 'password123'):")
         print(" 1. Administrator : admin@example.com       (John Doe - CIO)")
-        print(" 2. Manager       : manager@example.com     (Sarah Jenkins - VP Eng)")
-        print(" 3. Reviewer      : reviewer@example.com    (Raftaar Singh - Principal Architect)")
-        print(" 4. Reviewer (Sec): sec_reviewer@example.com(Elena Vance - Security Lead)")
-        print(" 5. Employee      : employee@example.com    (Alex Chen - Senior Engineer)")
-        print(" 6. Employee      : sujal@example.com       (Sujal Sharma - Fullstack Lead)")
+        print(" 2. Administrator : admin2@example.com      (Priya Patel - Director of Governance)")
+        print(" 3. Manager       : manager@example.com     (Sarah Jenkins - VP Eng)")
+        print(" 4. Manager       : manager2@example.com    (David Miller - Director Cloud Infra)")
+        print(" 5. Reviewer      : reviewer@example.com    (Raftaar Singh - Principal Architect)")
+        print(" 6. Reviewer (Sec): sec_reviewer@example.com(Elena Vance - Chief Security Lead)")
+        print(" 7. Employee      : employee@example.com    (Alex Chen - Senior Distributed Systems)")
+        print(" 8. Employee      : sujal@example.com       (Sujal Sharma - Fullstack Lead)")
         print("\nDecisions Seeded:")
         print(" - ADR-001: Monolith to Microservices (Approved & In Progress)")
         print(" - ADR-002: Zero-Trust Vault KMS (Under Active Review - Raftaar Pending)")
         print(" - ADR-003: PostgreSQL 16 Unified Datastore (Completed with Outcomes)")
         print(" - ADR-004: Frontend State Architecture (Draft)")
         print(" - ADR-005: Container Orchestrator Selection (Archived)")
+        print(" - ADR-006: [LIVE TEST] Redis Distributed Cache (Under Review - Raftaar & Sarah Pending)")
+        print(" - ADR-007: [DRAFT] Cloud Object Storage R2 vs S3 (Draft - Ready to Edit/Submit)")
         print("=" * 60)
 
     except Exception as e:
