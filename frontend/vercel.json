@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://expert-decision-replay-api.onrender.com/:path*"
+      "destination": "https://expert-decision-replay.onrender.com/:path*"
     },
     {
       "source": "/(.*)",

@@ -88,7 +88,7 @@ app.include_router(organization_router)
 app.include_router(reports_router)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {
         "message": f"Welcome to {settings.APP_NAME}"
